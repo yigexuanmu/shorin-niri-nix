@@ -2673,6 +2673,13 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn focus(&self) -> Option<&W> {
         if self.is_grid_overview_open() {
+            if let Some(win) = self
+                .active_workspace()
+                .and_then(|ws| ws.active_ignored_floating_window_in_grid())
+            {
+                return Some(win);
+            }
+
             if let Some(id) = self.grid_focused_window_id() {
                 return self
                     .workspaces()
@@ -5520,7 +5527,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn window_is_in_open_grid_overview(&self, id: &W::Id) -> bool {
         self.workspaces()
-            .any(|(_, _, ws)| ws.is_grid_overview_open() && ws.has_window(id))
+            .any(|(_, _, ws)| ws.window_is_in_grid_overview(id))
     }
 
     fn grid_all_monitors(&self) -> bool {

@@ -1615,6 +1615,14 @@ impl<W: LayoutElement> Monitor<W> {
             } else {
                 pos_within_output - geo.loc
             };
+            if let Some((win, hit)) = ws.ignored_floating_window_under(pos_within_workspace) {
+                let hit = if self.overview_progress.is_some() {
+                    hit.to_activate()
+                } else {
+                    hit.offset_win_pos(geo.loc)
+                };
+                return Some((win, hit));
+            }
             if let Some(id) = ws.grid_window_at(pos_within_workspace) {
                 let win = ws.windows().find(|w| *w.id() == id)?;
                 return Some((
@@ -1832,7 +1840,7 @@ impl<W: LayoutElement> Monitor<W> {
                             push(grid_scale_relocate(elem));
                         }
                     };
-                    ws.render_grid_overview(ctx.r(), &mut grid_push, xray_pos);
+                    ws.render_grid_overview(ctx.r(), &mut grid_push, xray_pos, focus_ring);
                 }
                 continue;
             }

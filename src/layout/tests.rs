@@ -4245,6 +4245,85 @@ fn grid_closing_renders_fullscreen_tiling_above_other_grid_items() {
 }
 
 #[test]
+fn grid_ignores_floating_windows_with_rule() {
+    let mut ignored_floating = TestWindowParams::new(2);
+    ignored_floating.is_floating = true;
+    ignored_floating.rules = Some(ResolvedWindowRules {
+        ignore_grid_overview: Some(true),
+        ..ResolvedWindowRules::default()
+    });
+
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: ignored_floating,
+        },
+        Op::FocusWindow(1),
+        Op::ToggleGridOverview,
+    ]);
+
+    assert_eq!(layout.grid_focused_window_id(), Some(1));
+    assert!(layout.window_is_in_open_grid_overview(&1));
+    assert!(!layout.window_is_in_open_grid_overview(&2));
+    assert!(!layout.confirm_grid_selection_for_window(&2));
+
+    let ws = layout.active_workspace().unwrap();
+    let hit_pos = ws
+        .tiles_with_render_positions()
+        .find_map(|(tile, pos, _)| {
+            (tile.window().id() == &2).then(|| {
+                let size = tile.tile_size();
+                pos + Point::from((size.w / 2., size.h / 2.))
+            })
+        })
+        .unwrap();
+    let (window, _) = ws.ignored_floating_window_under(hit_pos).unwrap();
+    assert_eq!(window.id(), &2);
+
+    layout.activate_window(&2);
+    assert_eq!(layout.focus().map(|win| win.id()), Some(&2));
+}
+
+#[test]
+fn grid_includes_floating_windows_without_ignore_rule() {
+    let mut included_floating = TestWindowParams::new(2);
+    included_floating.is_floating = true;
+    included_floating.rules = Some(ResolvedWindowRules {
+        ignore_grid_overview: Some(false),
+        ..ResolvedWindowRules::default()
+    });
+
+    let layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: included_floating,
+        },
+        Op::FocusWindow(1),
+        Op::ToggleGridOverview,
+    ]);
+
+    assert!(layout.window_is_in_open_grid_overview(&2));
+
+    let ws = layout.active_workspace().unwrap();
+    let hit_pos = ws
+        .tiles_with_render_positions()
+        .find_map(|(tile, pos, _)| {
+            (tile.window().id() == &2).then(|| {
+                let size = tile.tile_size();
+                pos + Point::from((size.w / 2., size.h / 2.))
+            })
+        })
+        .unwrap();
+    assert!(ws.ignored_floating_window_under(hit_pos).is_none());
+}
+
+#[test]
 fn grid_closing_focused_first_column_focuses_right() {
     let mut layout = three_column_grid_layout(1);
     check_ops_on_layout(&mut layout, [Op::ToggleGridOverview]);

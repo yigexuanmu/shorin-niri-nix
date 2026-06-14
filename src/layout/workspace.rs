@@ -789,25 +789,52 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn grid_overview_items(&self) -> Vec<(GridItem<W>, Size<f64, Logical>)> {
         let mut items = self.scrolling.grid_overview_items();
-        items.extend(self.floating.tiles().map(|tile| {
-            (
-                GridItem::Floating {
-                    window_id: tile.window().id().clone(),
-                },
-                tile.tile_size(),
-            )
-        }));
+        items.extend(
+            self.floating
+                .tiles()
+                .filter(|tile| !Self::tile_ignores_grid_overview(tile))
+                .map(|tile| {
+                    (
+                        GridItem::Floating {
+                            window_id: tile.window().id().clone(),
+                        },
+                        tile.tile_size(),
+                    )
+                }),
+        );
         items
     }
 
     fn grid_item_for_window(&self, id: &W::Id) -> Option<GridItem<W>> {
-        if self.floating.has_window(id) {
+        if let Some(tile) = self.floating.tiles().find(|tile| tile.window().id() == id) {
+            if Self::tile_ignores_grid_overview(tile) {
+                return None;
+            }
+
             return Some(GridItem::Floating {
                 window_id: id.clone(),
             });
         }
 
         self.scrolling.grid_item_for_window(id)
+    }
+
+    pub fn window_is_in_grid_overview(&self, id: &W::Id) -> bool {
+        self.is_grid_overview_open() && self.grid_item_for_window(id).is_some()
+    }
+
+    pub fn active_ignored_floating_window_in_grid(&self) -> Option<&W> {
+        if !self.is_grid_overview_open() {
+            return None;
+        }
+
+        let active = self.active_window()?;
+        (self.floating.has_window(active.id()) && self.grid_item_for_window(active.id()).is_none())
+            .then_some(active)
+    }
+
+    fn tile_ignores_grid_overview(tile: &Tile<W>) -> bool {
+        tile.window().rules().ignore_grid_overview == Some(true)
     }
 
     fn grid_item_normal_render_pos(
@@ -2412,6 +2439,7 @@ impl<W: LayoutElement> Workspace<W> {
         mut ctx: RenderCtx<R>,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
         base_xray_pos: XrayPos,
+        focus_ring: bool,
     ) {
         let scale = self.scale.fractional_scale();
         let overview_zoom = base_xray_pos.zoom;
@@ -2429,6 +2457,31 @@ impl<W: LayoutElement> Workspace<W> {
             .is_some_and(|progress| go.open && progress.is_animation());
         let should_render_grid_item =
             |item: &GridItem<W>| !is_closing || self.grid_item_visible_when_closing(item);
+
+        if self.is_floating_visible() {
+            let active_floating_id = (focus_ring && self.floating_is_active())
+                .then(|| self.floating.active_window())
+                .flatten()
+                .map(|win| win.id());
+            for (tile, tile_pos) in self
+                .floating
+                .tiles_with_render_positions()
+                .filter(|(tile, _)| Self::tile_ignores_grid_overview(tile))
+            {
+                let xray_pos = base_xray_pos.offset(tile_pos);
+                let render_focus_ring = active_floating_id == Some(tile.window().id());
+                tile.render(
+                    ctx.r(),
+                    tile_pos,
+                    xray_pos,
+                    render_focus_ring,
+                    &mut |elem| {
+                        let elem: FloatingSpaceRenderElement<R> = elem.into();
+                        push(elem.into());
+                    },
+                );
+            }
+        }
 
         {
             let render_tile = |ctx: &mut RenderCtx<R>,
@@ -2744,6 +2797,22 @@ impl<W: LayoutElement> Workspace<W> {
             let elem: ScrollingSpaceRenderElement<R> = elem.into();
             push(elem.into());
         }
+    }
+
+    pub fn ignored_floating_window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        if !self.is_floating_visible() {
+            return None;
+        }
+
+        self.floating
+            .tiles_with_render_positions()
+            .find_map(|(tile, tile_pos)| {
+                if !Self::tile_ignores_grid_overview(tile) {
+                    return None;
+                }
+
+                HitType::hit_tile(tile, tile_pos, pos)
+            })
     }
 
     pub fn render_above_top_layer(&self) -> bool {
