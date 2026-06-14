@@ -49,7 +49,7 @@ use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::niri::{CastTarget, KeyboardFocus, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
@@ -569,12 +569,12 @@ impl State {
                     }
                 }
 
-                let grid_has_keyboard_focus = this.niri.layout.is_grid_overview_open()
-                    && this.niri.keyboard_focus.is_layout();
+                let is_grid_overview_open = this.niri.layout.is_grid_overview_open();
 
                 if pressed && raw == Some(Keysym::Escape) {
                     // Close grid overview on Escape.
-                    if grid_has_keyboard_focus {
+                    if grid_should_close_on_escape(is_grid_overview_open, &this.niri.keyboard_focus)
+                    {
                         this.niri.layout.close_grid_overview();
                         this.niri.suppressed_keys.insert(key_code);
                         this.niri.queue_redraw_all();
@@ -594,7 +594,11 @@ impl State {
                 }
 
                 if pressed && raw == Some(Keysym::Return) {
-                    if grid_has_keyboard_focus {
+                    if grid_should_confirm_on_return(
+                        is_grid_overview_open,
+                        &this.niri.keyboard_focus,
+                        this.niri.layout.grid_focused_window_id().is_some(),
+                    ) {
                         this.niri.layout.confirm_grid_selection();
                         this.niri.suppressed_keys.insert(key_code);
                         this.niri.queue_redraw_all();
@@ -3201,7 +3205,8 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
-            } else if self.niri.layout.is_grid_overview_open()
+            } else if !is_overview_open
+                && self.niri.layout.is_grid_overview_open()
                 && button == Some(MouseButton::Left)
                 && !pointer.is_grabbed()
                 && !self.niri.screenshot_ui.is_open()
@@ -3332,9 +3337,19 @@ impl State {
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
+            let has_wheel_binds = self.niri.mods_with_wheel_binds.contains(&modifiers);
+            let should_handle_grid_workspace_scroll = grid_should_handle_workspace_wheel(
+                self.niri.layout.is_grid_overview_open(),
+                is_overview_open,
+                is_mru_open,
+                self.niri.screenshot_ui.is_open(),
+                modifiers,
+                has_wheel_binds,
+            );
             let should_handle = should_handle_in_overview
                 || is_mru_open
-                || self.niri.mods_with_wheel_binds.contains(&modifiers);
+                || has_wheel_binds
+                || should_handle_grid_workspace_scroll;
             if should_handle {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
@@ -3410,6 +3425,32 @@ impl State {
                 if ticks != 0 {
                     let (bind_up, bind_down) = if should_handle_in_overview && modifiers.is_empty()
                     {
+                        let bind_up = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollUp,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusWorkspaceUpUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        let bind_down = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollDown,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusWorkspaceDownUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        (bind_up, bind_down)
+                    } else if should_handle_grid_workspace_scroll {
                         let bind_up = Some(Bind {
                             key: Key {
                                 trigger: Trigger::WheelScrollUp,
@@ -5069,6 +5110,39 @@ fn allowed_during_screenshot(action: &Action) -> bool {
     )
 }
 
+fn grid_should_close_on_escape(
+    is_grid_overview_open: bool,
+    keyboard_focus: &KeyboardFocus,
+) -> bool {
+    is_grid_overview_open && keyboard_focus.is_layout()
+}
+
+fn grid_should_confirm_on_return(
+    is_grid_overview_open: bool,
+    keyboard_focus: &KeyboardFocus,
+    has_grid_focus: bool,
+) -> bool {
+    is_grid_overview_open
+        && has_grid_focus
+        && (keyboard_focus.is_layout() || keyboard_focus.is_overview())
+}
+
+fn grid_should_handle_workspace_wheel(
+    is_grid_overview_open: bool,
+    is_overview_open: bool,
+    is_mru_open: bool,
+    is_screenshot_open: bool,
+    modifiers: Modifiers,
+    has_wheel_binds: bool,
+) -> bool {
+    is_grid_overview_open
+        && !is_overview_open
+        && !is_mru_open
+        && !is_screenshot_open
+        && modifiers.is_empty()
+        && !has_wheel_binds
+}
+
 fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
     let mods = modifiers_from_state(mods);
     if !mods.is_empty() {
@@ -5695,6 +5769,81 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, false);
         assert!(matches!(filter, FilterResult::Intercept(None)));
         assert!(suppressed_keys.is_empty());
+    }
+
+    #[test]
+    fn grid_return_confirm_handles_overview_focus() {
+        let layout_focus = KeyboardFocus::Layout { surface: None };
+
+        assert!(grid_should_confirm_on_return(true, &layout_focus, true));
+        assert!(grid_should_confirm_on_return(
+            true,
+            &KeyboardFocus::Overview,
+            true
+        ));
+        assert!(!grid_should_confirm_on_return(
+            false,
+            &KeyboardFocus::Overview,
+            true
+        ));
+        assert!(!grid_should_confirm_on_return(
+            true,
+            &KeyboardFocus::Overview,
+            false
+        ));
+        assert!(!grid_should_confirm_on_return(
+            true,
+            &KeyboardFocus::Mru,
+            true
+        ));
+
+        assert!(grid_should_close_on_escape(true, &layout_focus));
+        assert!(!grid_should_close_on_escape(true, &KeyboardFocus::Overview));
+        assert!(!grid_should_close_on_escape(false, &layout_focus));
+    }
+
+    #[test]
+    fn grid_workspace_wheel_is_fallback_only() {
+        assert!(grid_should_handle_workspace_wheel(
+            true,
+            false,
+            false,
+            false,
+            Modifiers::empty(),
+            false,
+        ));
+        assert!(!grid_should_handle_workspace_wheel(
+            false,
+            false,
+            false,
+            false,
+            Modifiers::empty(),
+            false,
+        ));
+        assert!(!grid_should_handle_workspace_wheel(
+            true,
+            true,
+            false,
+            false,
+            Modifiers::empty(),
+            false,
+        ));
+        assert!(!grid_should_handle_workspace_wheel(
+            true,
+            false,
+            false,
+            false,
+            Modifiers::SHIFT,
+            false,
+        ));
+        assert!(!grid_should_handle_workspace_wheel(
+            true,
+            false,
+            false,
+            false,
+            Modifiers::empty(),
+            true,
+        ));
     }
 
     #[test]

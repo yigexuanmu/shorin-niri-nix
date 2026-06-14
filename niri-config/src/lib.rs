@@ -691,6 +691,20 @@ mod tests {
         assert_eq!(config.grid_overview.padding.bottom, 4.);
     }
 
+    #[test]
+    fn grid_overview_grid_all_monitors_parses() {
+        let config = Config::parse_mem(
+            r#"
+            grid-overview {
+                grid-all-monitors false
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert!(!config.grid_overview.grid_all_monitors);
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
@@ -1678,6 +1692,18 @@ mod tests {
                         ),
                     },
                 ),
+                grid_overview_open_close: GridOverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
                 magnifier: MagnifierAnim(
                     Animation {
                         off: false,
@@ -1768,6 +1794,18 @@ mod tests {
                         a: 0.3137255,
                     },
                 },
+            },
+            grid_overview: GridOverview {
+                gap: 16.0,
+                padding: GridOverviewPadding {
+                    left: 100.0,
+                    right: 100.0,
+                    top: 100.0,
+                    bottom: 100.0,
+                },
+                min_scale: 0.08,
+                focused_column_scale: 1.04,
+                grid_all_monitors: true,
             },
             magnifier: Magnifier {
                 off: false,

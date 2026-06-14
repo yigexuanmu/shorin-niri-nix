@@ -2498,8 +2498,6 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn switch_workspace_up(&mut self) {
-        self.dismiss_grid_overview();
-
         let Some(monitor) = self.active_monitor() else {
             return;
         };
@@ -2507,8 +2505,6 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn switch_workspace_down(&mut self) {
-        self.dismiss_grid_overview();
-
         let Some(monitor) = self.active_monitor() else {
             return;
         };
@@ -2516,8 +2512,6 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
-        self.dismiss_grid_overview();
-
         let Some(monitor) = self.active_monitor() else {
             return;
         };
@@ -2525,8 +2519,6 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
-        self.dismiss_grid_overview();
-
         let Some(monitor) = self.active_monitor() else {
             return;
         };
@@ -2534,8 +2526,6 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn switch_workspace_previous(&mut self) {
-        self.dismiss_grid_overview();
-
         let Some(monitor) = self.active_monitor() else {
             return;
         };
@@ -5525,8 +5515,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn is_grid_overview_open(&self) -> bool {
-        self.active_workspace()
-            .map_or(false, |ws| ws.is_grid_overview_open())
+        self.grid_overview_open_in_scope()
     }
 
     pub fn window_is_in_open_grid_overview(&self, id: &W::Id) -> bool {
@@ -5534,31 +5523,119 @@ impl<W: LayoutElement> Layout<W> {
             .any(|(_, _, ws)| ws.is_grid_overview_open() && ws.has_window(id))
     }
 
-    pub fn toggle_grid_overview(&mut self) {
-        let should_open = !self.is_grid_overview_open();
-        if should_open {
-            if let Some(ws) = self.active_workspace_mut() {
-                ws.toggle_grid_overview();
+    fn grid_all_monitors(&self) -> bool {
+        self.options.grid_overview.grid_all_monitors
+    }
+
+    fn grid_overview_open_in_scope(&self) -> bool {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &self.monitor_set
+        else {
+            return false;
+        };
+
+        if self.grid_all_monitors() {
+            monitors.iter().any(Monitor::is_grid_overview_open)
+        } else {
+            monitors[*active_monitor_idx].is_grid_overview_open()
+        }
+    }
+
+    fn set_grid_overview_open_in_scope(&mut self, open: bool) -> bool {
+        let all_monitors = self.grid_all_monitors();
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return false;
+        };
+
+        let mut changed = false;
+        if all_monitors {
+            for mon in monitors {
+                changed |= mon.is_grid_overview_open() != open;
+                mon.set_grid_overview_open(open);
             }
         } else {
-            self.confirm_grid_selection();
+            let mon = &mut monitors[*active_monitor_idx];
+            changed = mon.is_grid_overview_open() != open;
+            mon.set_grid_overview_open(open);
+        }
+        changed
+    }
+
+    fn close_grid_overview_for_monitor(&mut self, monitor_idx: usize) {
+        let all_monitors = self.grid_all_monitors();
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            return;
+        };
+
+        if all_monitors {
+            for mon in monitors {
+                mon.set_grid_overview_open(false);
+            }
+        } else if let Some(mon) = monitors.get_mut(monitor_idx) {
+            mon.set_grid_overview_open(false);
+        }
+    }
+
+    fn activate_grid_focused_window_on_active_monitor(&mut self) -> bool {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return false;
+        };
+
+        let Some(mon) = monitors.get_mut(*active_monitor_idx) else {
+            return false;
+        };
+        let Some(ws) = mon.workspaces.get_mut(mon.active_workspace_idx) else {
+            return false;
+        };
+        let Some(id) = ws.grid_focused_window_id() else {
+            return false;
+        };
+
+        if !ws.set_grid_focus_for_window(&id) {
+            return false;
+        }
+        if !ws.activate_window_from_grid(&id) {
+            return false;
+        }
+
+        ws.set_grid_focus_for_window(&id);
+        true
+    }
+
+    pub fn toggle_grid_overview(&mut self) {
+        if self.grid_overview_open_in_scope() {
+            self.close_grid_overview();
+        } else {
+            self.set_grid_overview_open_in_scope(true);
         }
     }
 
     pub fn open_grid_overview(&mut self) -> bool {
-        if self.is_grid_overview_open() {
+        if self.grid_overview_open_in_scope() {
             return false;
         }
-        self.toggle_grid_overview();
-        true
+        self.set_grid_overview_open_in_scope(true)
     }
 
     pub fn close_grid_overview(&mut self) -> bool {
-        if !self.is_grid_overview_open() {
+        if !self.grid_overview_open_in_scope() {
             return false;
         }
-        self.toggle_grid_overview();
-        true
+        self.activate_grid_focused_window_on_active_monitor();
+        self.set_grid_overview_open_in_scope(false)
     }
 
     pub fn grid_focused_window_id(&self) -> Option<W::Id> {
@@ -5574,50 +5651,59 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn confirm_grid_selection_for_window(&mut self, id: &W::Id) -> bool {
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = &mut self.monitor_set
-        else {
+        let target_monitor_idx = {
+            let MonitorSet::Normal {
+                monitors,
+                active_monitor_idx,
+                ..
+            } = &mut self.monitor_set
+            else {
+                return false;
+            };
+
+            let mut target = None;
+            for (mon_idx, mon) in monitors.iter_mut().enumerate() {
+                let Some(ws_idx) = mon
+                    .workspaces
+                    .iter()
+                    .position(|ws| ws.is_grid_overview_open() && ws.has_window(id))
+                else {
+                    continue;
+                };
+
+                let ws = &mut mon.workspaces[ws_idx];
+                if !ws.set_grid_focus_for_window(id) {
+                    return false;
+                }
+
+                if !ws.activate_window_from_grid(id) {
+                    return false;
+                }
+
+                ws.set_grid_focus_for_window(id);
+
+                mon.active_workspace_idx = ws_idx;
+                *active_monitor_idx = mon_idx;
+                target = Some(mon_idx);
+                break;
+            }
+
+            target
+        };
+
+        let Some(target_monitor_idx) = target_monitor_idx else {
             return false;
         };
 
-        for (mon_idx, mon) in monitors.iter_mut().enumerate() {
-            let Some(ws_idx) = mon
-                .workspaces
-                .iter()
-                .position(|ws| ws.is_grid_overview_open() && ws.has_window(id))
-            else {
-                continue;
-            };
-
-            let ws = &mut mon.workspaces[ws_idx];
-            if !ws.set_grid_focus_for_window(id) {
-                return false;
-            }
-
-            if !ws.activate_window_from_grid(id) {
-                return false;
-            }
-
-            ws.set_grid_focus_for_window(id);
-            ws.close_grid_overview();
-
-            mon.active_workspace_idx = ws_idx;
-            *active_monitor_idx = mon_idx;
-            return true;
+        if self.overview_open {
+            self.close_overview();
         }
-
-        false
+        self.close_grid_overview_for_monitor(target_monitor_idx);
+        true
     }
 
     pub fn dismiss_grid_overview(&mut self) -> bool {
-        if let Some(ws) = self.active_workspace_mut() {
-            return ws.close_grid_overview();
-        }
-
-        false
+        self.close_grid_overview()
     }
 
     pub fn grid_click_activated(&mut self) {
@@ -5627,8 +5713,8 @@ impl<W: LayoutElement> Layout<W> {
                 ws.activate_window_from_grid(&active_id);
             }
             ws.fix_floating_state_for_active();
-            ws.close_grid_overview();
         }
+        self.close_grid_overview();
     }
 
     fn active_grid_overview_action(

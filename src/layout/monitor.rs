@@ -80,6 +80,8 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) overview_open: bool,
     /// Progress of the overview zoom animation, 1 is fully in overview.
     overview_progress: Option<OverviewProgress>,
+    /// Whether grid overview is enabled for this monitor.
+    grid_overview_open: bool,
     /// Clock for driving animations.
     pub(super) clock: Clock,
     /// Configurable properties of the layout as received from the parent layout.
@@ -342,6 +344,7 @@ impl<W: LayoutElement> Monitor<W> {
             insert_hint_render_loc: None,
             overview_open: false,
             overview_progress: None,
+            grid_overview_open: false,
             workspace_switch: None,
             clock,
             base_options,
@@ -553,6 +556,8 @@ impl<W: LayoutElement> Monitor<W> {
             workspace_idx += 1;
         }
 
+        self.open_grid_for_workspace_if_needed(workspace_idx);
+
         if activate {
             self.activate_workspace(workspace_idx);
         }
@@ -591,6 +596,8 @@ impl<W: LayoutElement> Monitor<W> {
             workspace_idx += 1;
         }
 
+        self.open_grid_for_workspace_if_needed(workspace_idx);
+
         if allow_to_activate_workspace && activate.map_smart(|| false) {
             self.activate_workspace(workspace_idx);
         }
@@ -617,6 +624,8 @@ impl<W: LayoutElement> Monitor<W> {
 
         // Since we're adding window to an existing column, the workspace isn't empty, and
         // therefore cannot be the last one, so we never need to insert a new empty workspace.
+
+        self.open_grid_for_workspace_if_needed(workspace_idx);
 
         if allow_to_activate_workspace && activate {
             self.activate_workspace(workspace_idx);
@@ -708,6 +717,8 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         self.workspaces.insert(idx, ws);
+
+        self.open_grid_for_workspace_if_needed(idx);
 
         if idx <= self.active_workspace_idx {
             self.active_workspace_idx += 1;
@@ -1390,6 +1401,38 @@ impl<W: LayoutElement> Monitor<W> {
             if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
                 // FIXME: maintain velocity.
                 *anim = anim.restarted(prev_render_idx, anim.to(), 0.);
+            }
+        }
+    }
+
+    pub(super) fn is_grid_overview_open(&self) -> bool {
+        self.grid_overview_open
+    }
+
+    pub(super) fn set_grid_overview_open(&mut self, open: bool) {
+        self.grid_overview_open = open;
+
+        if open {
+            for ws in &mut self.workspaces {
+                if ws.has_windows() {
+                    ws.open_grid_overview();
+                }
+            }
+        } else {
+            for ws in &mut self.workspaces {
+                ws.close_grid_overview();
+            }
+        }
+    }
+
+    fn open_grid_for_workspace_if_needed(&mut self, workspace_idx: usize) {
+        if !self.grid_overview_open {
+            return;
+        }
+
+        if let Some(ws) = self.workspaces.get_mut(workspace_idx) {
+            if ws.has_windows() {
+                ws.open_grid_overview();
             }
         }
     }

@@ -4303,7 +4303,7 @@ fn grid_closing_nonfocused_column_preserves_grid_focus() {
 }
 
 #[test]
-fn grid_dismisses_without_confirming_on_workspace_switch() {
+fn grid_stays_open_on_workspace_switch() {
     let mut layout = three_column_grid_layout(1);
     check_ops_on_layout(&mut layout, [Op::ToggleGridOverview]);
     layout.focus_right();
@@ -4312,12 +4312,11 @@ fn grid_dismisses_without_confirming_on_workspace_switch() {
 
     check_ops_on_layout(&mut layout, [Op::FocusWorkspaceDown]);
 
-    assert!(!layout.is_grid_overview_open());
+    assert!(layout.is_grid_overview_open());
 
     check_ops_on_layout(&mut layout, [Op::FocusWorkspaceUp]);
 
-    assert!(!layout.is_grid_overview_open());
-    assert_eq!(layout.focus().map(|window| *window.id()), Some(1));
+    assert!(layout.is_grid_overview_open());
 }
 
 fn three_column_grid_layout(active: usize) -> Layout<TestWindow> {
@@ -4935,20 +4934,30 @@ fn grid_move_window_to_workspace_keeps_source_grid_open() {
 
 #[test]
 fn grid_window_scope_is_limited_to_open_grid_workspace() {
-    let mut layout = check_ops([
-        Op::AddOutput(1),
-        Op::AddOutput(2),
-        Op::FocusOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
+    let options = Options {
+        grid_overview: niri_config::GridOverview {
+            grid_all_monitors: false,
+            ..Default::default()
         },
-        Op::FocusOutput(2),
-        Op::AddWindow {
-            params: TestWindowParams::new(2),
-        },
-        Op::FocusOutput(1),
-        Op::ToggleGridOverview,
-    ]);
+        ..Default::default()
+    };
+    let mut layout = check_ops_with_options(
+        options,
+        [
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::FocusOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::FocusOutput(1),
+            Op::ToggleGridOverview,
+        ],
+    );
 
     assert!(layout.window_is_in_open_grid_overview(&1));
     assert!(!layout.window_is_in_open_grid_overview(&2));
@@ -5103,6 +5112,276 @@ fn grid_interactive_insert_preserves_pushed_tile_move_animation() {
         .unwrap();
 
     assert!(pushed_offset.abs() > 0.001);
+}
+
+#[test]
+fn grid_toggle_applies_to_all_monitors_by_default() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddOutput(2),
+        Op::FocusOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusOutput(2),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FocusOutput(1),
+    ]);
+
+    layout.toggle_grid_overview();
+    layout.verify_invariants();
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!();
+    };
+    assert!(monitors[0].is_grid_overview_open());
+    assert!(monitors[1].is_grid_overview_open());
+    assert!(monitors[0].workspaces[0].is_grid_overview_open());
+    assert!(monitors[1].workspaces[0].is_grid_overview_open());
+
+    layout.toggle_grid_overview();
+    layout.verify_invariants();
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!();
+    };
+    assert!(!monitors[0].is_grid_overview_open());
+    assert!(!monitors[1].is_grid_overview_open());
+}
+
+#[test]
+fn grid_all_monitors_false_toggles_only_focused_monitor() {
+    let options = Options {
+        grid_overview: niri_config::GridOverview {
+            grid_all_monitors: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut layout = check_ops_with_options(
+        options,
+        [
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::FocusOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::FocusOutput(1),
+        ],
+    );
+
+    layout.toggle_grid_overview();
+    layout.verify_invariants();
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!();
+    };
+    assert!(monitors[0].is_grid_overview_open());
+    assert!(!monitors[1].is_grid_overview_open());
+}
+
+#[test]
+fn grid_all_monitors_false_cross_output_move_uses_target_monitor_grid_state() {
+    let options = Options {
+        grid_overview: niri_config::GridOverview {
+            grid_all_monitors: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let layout = check_ops_with_options(
+        options,
+        [
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::FocusOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::ToggleGridOverview,
+            Op::FocusOutput(1),
+            Op::MoveWindowToOutput {
+                window_id: Some(1),
+                output_id: 2,
+                target_ws_idx: Some(1),
+            },
+        ],
+    );
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!();
+    };
+    assert!(!monitors[0].is_grid_overview_open());
+    assert!(monitors[1].is_grid_overview_open());
+    assert!(monitors[1].workspaces[1].has_window(&1));
+    assert!(monitors[1].workspaces[1].is_grid_overview_open());
+}
+
+#[test]
+fn grid_mode_applies_to_workspace_that_gets_first_window() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ToggleGridOverview,
+    ]);
+
+    layout.move_to_workspace(None, 1, ActivateWindow::Yes);
+    layout.verify_invariants();
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!();
+    };
+    let monitor = &monitors[0];
+    assert!(monitor.is_grid_overview_open());
+    assert!(monitor.workspaces[1].has_windows());
+    assert!(monitor.workspaces[1].is_grid_overview_open());
+}
+
+#[test]
+fn overview_close_preserves_grid_mode() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ToggleGridOverview,
+        Op::ToggleOverview,
+    ]);
+
+    layout.toggle_overview();
+    layout.verify_invariants();
+
+    assert!(!layout.is_overview_open());
+    assert!(layout.is_grid_overview_open());
+}
+
+#[test]
+fn overview_grid_confirm_closes_overview_and_grid() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ToggleOverview,
+        Op::ToggleGridOverview,
+    ]);
+
+    assert!(layout.confirm_grid_selection_for_window(&1));
+    layout.verify_invariants();
+
+    assert!(!layout.is_overview_open());
+    assert!(!layout.is_grid_overview_open());
+}
+
+#[test]
+fn overview_grid_close_commits_grid_focus_and_keeps_overview_open() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::FocusWindow(1),
+        Op::ToggleOverview,
+        Op::ToggleGridOverview,
+    ]);
+
+    layout.focus_right();
+    layout.focus_right();
+    layout.verify_invariants();
+
+    assert_eq!(layout.grid_focused_window_id(), Some(3));
+    assert_eq!(
+        layout
+            .active_workspace()
+            .unwrap()
+            .active_window()
+            .map(|window| *window.id()),
+        Some(1)
+    );
+
+    assert!(layout.close_grid_overview());
+    layout.verify_invariants();
+
+    assert!(layout.is_overview_open());
+    assert!(!layout.is_grid_overview_open());
+    assert_eq!(layout.focus().map(|window| *window.id()), Some(3));
+}
+
+#[test]
+fn grid_close_after_moving_focused_window_to_workspace_refits_view() {
+    let wide_params = |id| {
+        let mut params = TestWindowParams::new(id);
+        params.bbox = Rectangle::from_size(Size::from((600, 200)));
+        params
+    };
+
+    let expected = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: wide_params(1),
+        },
+        Op::AddWindow {
+            params: wide_params(2),
+        },
+        Op::FocusWindow(2),
+    ]);
+    let expected_view_pos = expected
+        .active_workspace()
+        .unwrap()
+        .scrolling()
+        .target_view_pos();
+
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: wide_params(1),
+        },
+        Op::AddWindow {
+            params: wide_params(2),
+        },
+        Op::AddWindow {
+            params: wide_params(3),
+        },
+        Op::FocusWindow(3),
+    ]);
+    layout.toggle_grid_overview();
+    layout.move_to_workspace(None, 1, ActivateWindow::Smart);
+    layout.switch_workspace(0);
+    layout.verify_invariants();
+
+    assert!(layout.is_grid_overview_open());
+    assert_eq!(layout.grid_focused_window_id(), Some(2));
+
+    assert!(layout.close_grid_overview());
+    layout.verify_invariants();
+
+    assert!(!layout.is_grid_overview_open());
+    assert_eq!(layout.focus().map(|window| *window.id()), Some(2));
+    let actual_view_pos = layout
+        .active_workspace()
+        .unwrap()
+        .scrolling()
+        .target_view_pos();
+    approx::assert_abs_diff_eq!(actual_view_pos, expected_view_pos, epsilon = 0.001);
 }
 
 #[test]

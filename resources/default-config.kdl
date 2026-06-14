@@ -293,6 +293,13 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 // You can also set this to null to disable saving screenshots to disk.
 // screenshot-path null
 
+// Grid overview settings.
+grid-overview {
+    // Make grid overview apply to all monitors. Set this to false to only toggle it on
+    // the focused monitor.
+    grid-all-monitors true
+}
+
 // Animation settings.
 // The wiki explains how to configure individual animations:
 // https://niri-wm.github.io/niri/Configuration:-Animations

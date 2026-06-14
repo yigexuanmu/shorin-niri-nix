@@ -265,6 +265,7 @@ pub struct GridOverview {
     pub padding: GridOverviewPadding,
     pub min_scale: f64,
     pub focused_column_scale: f64,
+    pub grid_all_monitors: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -299,6 +300,7 @@ impl Default for GridOverview {
             padding: GridOverviewPadding::default(),
             min_scale: 0.08,
             focused_column_scale: 1.04,
+            grid_all_monitors: true,
         }
     }
 }
@@ -432,6 +434,8 @@ pub struct GridOverviewPart {
     pub min_scale: Option<FloatOrInt<0, 1>>,
     #[knuffel(child, unwrap(argument))]
     pub focused_column_scale: Option<FloatOrInt<1, 2>>,
+    #[knuffel(child, unwrap(argument))]
+    pub grid_all_monitors: Option<bool>,
 }
 
 impl MergeWith<GridOverviewPart> for GridOverview {
@@ -447,6 +451,9 @@ impl MergeWith<GridOverviewPart> for GridOverview {
         }
         if let Some(focused_column_scale) = &part.focused_column_scale {
             self.focused_column_scale = focused_column_scale.0;
+        }
+        if let Some(grid_all_monitors) = part.grid_all_monitors {
+            self.grid_all_monitors = grid_all_monitors;
         }
     }
 }
