@@ -1705,6 +1705,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
         let previous_idx = previous_window
             .and_then(|window| self.columns.iter().position(|col| col.contains(window)));
+        let previous_window_left_workspace = previous_window.is_some() && previous_idx.is_none();
+        let (previous_idx, previous_view_pos) = if previous_window_left_workspace {
+            let previous_idx = column_idx.checked_sub(1);
+            let previous_view_pos = previous_idx
+                .map(|idx| self.column_x(idx) - self.options.layout.gaps - self.working_area.loc.x);
+            (previous_idx, previous_view_pos)
+        } else {
+            (previous_idx, previous_view_pos)
+        };
 
         let column = &mut self.columns[column_idx];
         column.activate_window(window);
