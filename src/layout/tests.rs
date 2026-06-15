@@ -5236,6 +5236,37 @@ fn grid_insert_hint_area_uses_grid_visual_coordinates() {
 }
 
 #[test]
+fn grid_new_column_insert_hint_does_not_span_wrapped_rows() {
+    let mut ops = vec![Op::AddOutput(1)];
+    for id in 1..=8 {
+        let mut params = TestWindowParams::new(id);
+        params.bbox = Rectangle::from_size(Size::from((800, 500)));
+        ops.push(Op::AddWindow { params });
+    }
+    ops.push(Op::ToggleGridOverview);
+    ops.push(Op::CompleteAnimations);
+    let layout = check_ops(ops);
+
+    let rects: Vec<_> = (1..=8)
+        .map(|id| (id, grid_window_visual_rect(&layout, id)))
+        .collect();
+    let first_row_y = rects[0].1.loc.y;
+    let (source_id, _) = rects
+        .iter()
+        .take_while(|(_, rect)| (rect.loc.y - first_row_y).abs() < 0.001)
+        .last()
+        .unwrap();
+
+    let ws = layout.active_workspace().unwrap();
+    let (_, right_edge, _) = grid_window_point(&layout, *source_id, 0.9, 0.5);
+    let (position, area) = ws.grid_insert_position_and_hint_area(right_edge).unwrap();
+    let source_rect = grid_window_visual_rect(&layout, *source_id);
+    assert_eq!(position, InsertPosition::NewColumn(*source_id));
+    assert!(area.loc.y >= source_rect.loc.y);
+    assert!(area.loc.y + area.size.h <= source_rect.loc.y + source_rect.size.h);
+}
+
+#[test]
 fn grid_interactive_move_keeps_visual_scale_and_can_merge() {
     let mut layout = large_grid_layout();
     assert!(layout

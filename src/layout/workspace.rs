@@ -3416,6 +3416,9 @@ impl<W: LayoutElement> Workspace<W> {
             if item_col_idx != col_idx {
                 continue;
             }
+            if info.row != preferred_row {
+                continue;
+            }
 
             let (pos, scale) = self.grid_item_visual_transform(go, item, info);
             let source_size = info.target_size.downscale(info.target_scale.max(0.0001));
