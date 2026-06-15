@@ -559,6 +559,15 @@ impl<W: LayoutElement> Monitor<W> {
         self.open_grid_for_workspace_if_needed(workspace_idx);
 
         if activate {
+            if let Some(id) = self.workspaces[workspace_idx]
+                .active_window()
+                .map(|window| window.id().clone())
+            {
+                self.workspaces[workspace_idx].on_window_added_in_grid(&id);
+            }
+        }
+
+        if activate {
             self.activate_workspace(workspace_idx);
         }
     }

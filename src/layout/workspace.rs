@@ -667,11 +667,18 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn on_window_closed_in_grid(&mut self) {
         let previous_focus = self.grid_focused_window_id();
+        let saved_active_window_closed = self
+            .grid_overview
+            .as_ref()
+            .and_then(|go| go.saved_active_window_id.as_ref())
+            .is_some_and(|id| !self.has_window(id));
         if self.is_grid_overview_open() {
             self.scrolling.stop_move_animations();
         }
         self.recompute_grid_overview_layout(true);
-
+        if let Some(go) = &mut self.grid_overview {
+            go.saved_active_window_closed |= saved_active_window_closed;
+        }
         if let Some(id) = previous_focus {
             if self.set_grid_focus_for_window(&id) {
                 return;
@@ -3095,7 +3102,10 @@ impl<W: LayoutElement> Workspace<W> {
             .grid_overview
             .as_ref()
             .and_then(|go| go.saved_active_window_id.clone());
-        let previous_view_pos = self.grid_overview.as_ref().map(|go| go.saved_view_offset);
+        let previous_view_pos = self
+            .grid_overview
+            .as_ref()
+            .and_then(|go| (!go.saved_active_window_closed).then_some(go.saved_view_offset));
 
         if self.floating.activate_window(window) {
             self.floating_is_active = FloatingActive::Yes;
@@ -3600,6 +3610,11 @@ impl<W: LayoutElement> Workspace<W> {
     #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
+    }
+
+    #[cfg(test)]
+    pub fn scrolling_mut(&mut self) -> &mut ScrollingSpace<W> {
+        &mut self.scrolling
     }
 
     #[cfg(test)]
