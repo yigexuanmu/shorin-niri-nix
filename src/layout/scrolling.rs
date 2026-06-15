@@ -1483,11 +1483,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     view_config,
                 );
             }
-        } else if column_idx == self.active_column_idx {
-            self.active_column_idx = min(self.active_column_idx, self.columns.len() - 1);
-            let new_view_offset =
-                self.compute_new_view_offset_for_column(None, self.active_column_idx, None);
-            self.view_offset = ViewOffset::Static(new_view_offset);
         } else {
             self.activate_column_with_anim_config(
                 min(self.active_column_idx, self.columns.len() - 1),
@@ -2632,11 +2627,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn target_view_pos(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset.target()
-    }
-
-    #[cfg(test)]
-    pub fn clear_activate_prev_column_on_removal_for_tests(&mut self) {
-        self.activate_prev_column_on_removal = None;
     }
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial

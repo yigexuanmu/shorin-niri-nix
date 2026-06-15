@@ -4484,21 +4484,6 @@ fn scrolling_column_ids(layout: &Layout<TestWindow>) -> Vec<Vec<usize>> {
         .collect()
 }
 
-fn window_render_pos(layout: &Layout<TestWindow>, window: usize) -> Point<f64, Logical> {
-    layout
-        .active_workspace()
-        .unwrap()
-        .tiles_with_render_positions()
-        .find_map(|(tile, pos, _)| (tile.window().id() == &window).then_some(pos))
-        .unwrap()
-}
-
-fn wide_625_params(id: usize) -> TestWindowParams {
-    let mut params = TestWindowParams::new(id);
-    params.bbox = Rectangle::from_size(Size::from((625, 200)));
-    params
-}
-
 fn grid_window_point(
     layout: &Layout<TestWindow>,
     window: usize,
@@ -5587,107 +5572,6 @@ fn grid_close_after_moving_focused_window_to_workspace_refits_view() {
         .scrolling()
         .target_view_pos();
     approx::assert_abs_diff_eq!(actual_view_pos, expected_view_pos, epsilon = 0.001);
-}
-
-#[test]
-fn removing_active_last_column_without_prev_fallback_refits_immediately() {
-    let expected = check_ops([
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: wide_625_params(1),
-        },
-        Op::AddWindow {
-            params: wide_625_params(2),
-        },
-        Op::FocusWindow(2),
-        Op::CompleteAnimations,
-    ]);
-    let expected_1 = window_render_pos(&expected, 1);
-    let expected_2 = window_render_pos(&expected, 2);
-
-    let mut layout = check_ops([
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: wide_625_params(1),
-        },
-        Op::AddWindow {
-            params: wide_625_params(2),
-        },
-        Op::AddWindow {
-            params: wide_625_params(3),
-        },
-        Op::FocusWindow(3),
-    ]);
-    layout
-        .active_workspace_mut()
-        .unwrap()
-        .scrolling_mut()
-        .clear_activate_prev_column_on_removal_for_tests();
-    check_ops_on_layout(&mut layout, [Op::CloseWindow(3)]);
-
-    let actual_1 = window_render_pos(&layout, 1);
-    let actual_2 = window_render_pos(&layout, 2);
-    approx::assert_abs_diff_eq!(actual_1.x, expected_1.x, epsilon = 0.001);
-    approx::assert_abs_diff_eq!(actual_1.y, expected_1.y, epsilon = 0.001);
-    approx::assert_abs_diff_eq!(actual_2.x, expected_2.x, epsilon = 0.001);
-    approx::assert_abs_diff_eq!(actual_2.y, expected_2.y, epsilon = 0.001);
-}
-
-#[test]
-fn grid_close_after_focused_window_removal_ignores_dead_saved_view() {
-    let mut options = Options::default();
-    options.layout.center_focused_column = CenterFocusedColumn::OnOverflow;
-
-    let expected = check_ops_with_options(
-        options.clone(),
-        [
-            Op::AddOutput(1),
-            Op::AddWindow {
-                params: wide_625_params(1),
-            },
-            Op::Communicate(1),
-            Op::AddWindow {
-                params: wide_625_params(2),
-            },
-            Op::Communicate(2),
-            Op::FocusWindow(2),
-            Op::CompleteAnimations,
-        ],
-    );
-    let expected_1 = window_render_pos(&expected, 1);
-    let expected_2 = window_render_pos(&expected, 2);
-
-    let layout = check_ops_with_options(
-        options,
-        [
-            Op::AddOutput(1),
-            Op::AddWindow {
-                params: wide_625_params(1),
-            },
-            Op::Communicate(1),
-            Op::AddWindow {
-                params: wide_625_params(2),
-            },
-            Op::Communicate(2),
-            Op::AddWindow {
-                params: wide_625_params(3),
-            },
-            Op::Communicate(3),
-            Op::FocusWindow(3),
-            Op::CompleteAnimations,
-            Op::ToggleGridOverview,
-            Op::CloseWindow(3),
-            Op::ToggleGridOverview,
-            Op::CompleteAnimations,
-        ],
-    );
-
-    let actual_1 = window_render_pos(&layout, 1);
-    let actual_2 = window_render_pos(&layout, 2);
-    approx::assert_abs_diff_eq!(actual_1.x, expected_1.x, epsilon = 0.001);
-    approx::assert_abs_diff_eq!(actual_1.y, expected_1.y, epsilon = 0.001);
-    approx::assert_abs_diff_eq!(actual_2.x, expected_2.x, epsilon = 0.001);
-    approx::assert_abs_diff_eq!(actual_2.y, expected_2.y, epsilon = 0.001);
 }
 
 #[test]
