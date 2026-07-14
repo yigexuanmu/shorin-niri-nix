@@ -14,7 +14,7 @@ use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::{Blocker, BlockerState};
 
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::shader_element::ShaderRenderElement;
@@ -49,6 +49,9 @@ pub struct ClosingWindow {
 
     /// Horizontal movement synchronized with a layout change.
     move_x: Option<Animation>,
+
+    /// Whether this window should compensate for scrolling view movements.
+    compensate_view_movements: bool,
 
     /// How much the texture should be offset.
     buffer_offset: Point<f64, Logical>,
@@ -167,6 +170,7 @@ impl ClosingWindow {
             geo_size,
             pos,
             move_x: None,
+            compensate_view_movements: false,
             buffer_offset,
             buffer_with_blocked_out_bg_offset,
             blocked_out_buffer_offset,
@@ -194,8 +198,28 @@ impl ClosingWindow {
         }
     }
 
-    pub(super) fn set_move_x_animation(&mut self, animation: Animation) {
-        self.move_x = Some(animation);
+    pub(super) fn enable_view_movement_compensation(&mut self) {
+        self.compensate_view_movements = true;
+    }
+
+    pub(super) fn compensate_view_movement(
+        &mut self,
+        delta: f64,
+        clock: &Clock,
+        config: niri_config::Animation,
+    ) {
+        if !self.compensate_view_movements || delta == 0. {
+            return;
+        }
+
+        let current = self.move_x.as_ref().map_or(0., Animation::value);
+        self.move_x = Some(Animation::new(
+            clock.clone(),
+            current,
+            current + delta,
+            0.,
+            config,
+        ));
     }
 
     pub(super) fn position_in_view(&self, view_x: f64) -> Point<f64, Logical> {

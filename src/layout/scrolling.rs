@@ -1413,6 +1413,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         column_idx: usize,
         anim_config: Option<niri_config::Animation>,
     ) -> Column<W> {
+        let view_pos_before = self.view_pos();
         let refill_right_edge = anim_config.is_none()
             && !self.view_offset.is_gesture()
             && column_idx == self.active_column_idx
@@ -1507,6 +1508,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.activate_column_with_anim_config(target_idx - 1, movement_config);
             } else {
                 self.activate_column_with_anim_config(target_idx, view_config);
+            }
+        }
+
+        let closing_config = if focus_left_refill {
+            Some(movement_config)
+        } else if refill_right_edge {
+            Some(view_config)
+        } else {
+            None
+        };
+        if let Some(config) = closing_config {
+            let delta = self.target_view_pos() - view_pos_before;
+            for closing in &mut self.closing_windows {
+                closing.compensate_view_movement(delta, &self.clock, config);
             }
         }
 
@@ -1836,15 +1851,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let col = &self.columns[col_idx];
         let removing_last = col.tiles.len() == 1;
-        let move_x = (removing_last && self.should_focus_left_refill(col_idx)).then(|| {
-            Animation::new(
-                self.clock.clone(),
-                0.,
-                self.column_x(col_idx - 1) - self.column_x(col_idx),
-                0.,
-                self.options.animations.window_movement.0,
-            )
-        });
 
         // Skip closing animation for invisible tiles in a tabbed column.
         if col.display_mode == ColumnDisplay::Tabbed && tile_idx != col.active_tile_idx {
@@ -1872,9 +1878,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             tile_pos.x -= offset;
         }
 
-        self.start_close_animation_for_tile(
-            renderer, snapshot, tile_size, tile_pos, blocker, move_x,
-        );
+        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker, true);
     }
 
     pub fn start_close_animation_for_window_at(
@@ -1893,7 +1897,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         };
 
-        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker, None);
+        self.start_close_animation_for_tile(
+            renderer, snapshot, tile_size, tile_pos, blocker, false,
+        );
     }
 
     fn start_close_animation_for_tile(
@@ -1903,7 +1909,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         tile_size: Size<f64, Logical>,
         tile_pos: Point<f64, Logical>,
         blocker: TransactionBlocker,
-        move_x: Option<Animation>,
+        compensate_view_movements: bool,
     ) {
         let anim = Animation::new(
             self.clock.clone(),
@@ -1925,8 +1931,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         );
         match res {
             Ok(mut closing) => {
-                if let Some(animation) = move_x {
-                    closing.set_move_x_animation(animation);
+                if compensate_view_movements {
+                    closing.enable_view_movement_compensation();
                 }
                 self.closing_windows.push(closing);
             }
