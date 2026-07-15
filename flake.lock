@@ -26,6 +26,7 @@
         "type": "github"
       },
       "original": {
+        "flake": false,
         "owner": "SHORiN-KiWATA",
         "repo": "niri",
         "type": "github"
