@@ -17,6 +17,7 @@
       }
     },
     "shorin-niri": {
+      "flake": false,
       "locked": {
         "lastModified": 1784023492,
         "narHash": "sha256-UyBGEn/4LGepzfLqxtDerEXFbqp4VKFOTKwx0h/fWk0=",
@@ -26,7 +27,6 @@
         "type": "github"
       },
       "original": {
-        "flake": false,
         "owner": "SHORiN-KiWATA",
         "repo": "niri",
         "type": "github"
