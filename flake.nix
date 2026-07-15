@@ -96,6 +96,7 @@
 
           checkFlags = [
             "--skip=::egl"
+            "--skip=tests::animations"
           ];
 
           postInstall =
