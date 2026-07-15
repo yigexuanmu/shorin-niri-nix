@@ -38,15 +38,6 @@ home.packages = [
 ];
 ```
 
-### 3. 使用 overlay
-
-```nix
-nixpkgs.overlays = [ inputs.shorin-niri.overlays.default ];
-
-# 然后可以直接引用
-environment.systemPackages = [ nixpkgs.niri ];
-```
-
 ## 配置选项
 
 `flake.nix` 支持以下可选参数：
