@@ -25,17 +25,10 @@
 **NixOS systemPackages**
 
 ```nix
-environment.systemPackages = [
-  inputs.shorin-niri.packages.x86_64-linux.default
-];
-```
-
-**Home Manager**
-
-```nix
-home.packages = [
-  inputs.shorin-niri.packages.x86_64-linux.default
-];
+  programs.niri = {
+    enable = true;
+    package = inputs.shorin-niri.packages.x86_64-linux.default;
+  };
 ```
 
 ## 配置选项
