@@ -31,19 +31,7 @@
   };
 ```
 
-## 配置选项
-
-`flake.nix` 支持以下可选参数：
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `withDbus` | `true` | 启用 DBus 支持 |
-| `withSystemd` | `true` | 启用 Systemd 支持 |
-| `withScreencastSupport` | `true` | 启用屏幕录制支持 |
-| `withDinit` | `false` | 启用 Dinit 支持 |
-
 ## 相关链接
 
 - 上游仓库: [SHORiN-KiWATA/niri](https://github.com/SHORiN-KiWATA/niri)
-- 官方 niri: [YaLTeR/niri](https://github.com/YaLTeR/niri)
-- 官方 niri flake: [niri-wm/niri](https://github.com/niri-wm/niri)
+- 官方 niri: [niri-wm/niri](https://github.com/niri-wm/niri)
